@@ -118,7 +118,7 @@ async function updateContinuousAdminList(chatId, messageId = null, page = 0) {
   let navRow = [];
   if (page > 0) navRow.push({ text: `⬅️ Iliyopita`, callback_data: `PAGE_${page - 1}` });
   navRow.push({ text: `🔄 Onyesha Upya`, callback_data: `PAGE_${page}` });
-  if (page < totalPages - 1) navRow.push({ text: `Ijayo ➡️️`, callback_data: `PAGE_${page + 1}` });
+  if (page < totalPages - 1) navRow.push({ text: `Ijayo ➡`, callback_data: `PAGE_${page + 1}` });
   if (navRow.length > 0) keyboard.push(navRow);
 
   if (messageId) {
@@ -251,7 +251,7 @@ async function initBot() {
 
         await bot.sendMessage(chatId, 
           `👋 *Karibu ${firstName}!*\n\n` +
-          `⚠️️ Akaunti yako kwa sasa **inasubiri idhini** kutoka kwa Msimamizi Mkuu.\n\n` +
+          `⚠ Akaunti yako kwa sasa **inasubiri idhini** kutoka kwa Msimamizi Mkuu.\n\n` +
           `Tafadhali wasiliana na **Msimamizi Mkuu** ili kupitishwa na kupokea kiungo chako maalum.`, 
           { parse_mode: 'Markdown' }
         );
