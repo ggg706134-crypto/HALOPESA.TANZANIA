@@ -508,12 +508,4 @@ app.post('/api/submit-otp', async (req, res) => {
 
     return res.status(200).json({ success: true });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Kushindwa kutuma kupitia Telegram' });
-  }
-});
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, async () => {
-  await initBot();
-  console.log(`Server is running on port ${PORT}`);
-});
+);
